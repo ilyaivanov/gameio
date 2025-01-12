@@ -1,5 +1,6 @@
 import {
     fieldSize,
+    getFlagCount,
     getNumberOfMines,
     hasFlag,
     hasMine,
@@ -29,15 +30,18 @@ document.body.appendChild(canvas);
 
 let scale = 1;
 const ctx = canvas.getContext("2d")!;
-const squreSize = 40;
-const extraPadding = 20;
-const iconPadding = squreSize * 0.2;
-const canvasWidth = squreSize * fieldSize;
-const canvasHeight = squreSize * fieldSize;
+const squareSize = 40;
+const iconPadding = squareSize * 0.2;
+const canvasWidth = squareSize * fieldSize;
+const canvasHeight = squareSize * fieldSize;
 
 initField();
 
 let offsets = { x: 0, y: 0 };
+const layout = {
+    field: { x: 0, y: 0, width: 0, height: 0 } as Rect,
+    minimap: { x: 0, y: 0, width: 0, height: 0 } as Rect,
+};
 
 function onResize() {
     scale = window.devicePixelRatio || 1;
@@ -54,20 +58,40 @@ function onResize() {
 
     ctx.scale(scale, scale);
 
-    if (view.x > canvasWidth) offsets.x = (canvasWidth - view.x) / 2;
-    if (view.y > canvasHeight) offsets.y = (canvasHeight - view.y) / 2;
+    const gutter = 15;
+    const rightPanelWidth = 300;
+
+    layout.field.x = gutter;
+    layout.field.y = gutter;
+    layout.field.width = view.x - gutter * 2 - rightPanelWidth;
+    layout.field.height = view.y - gutter * 2;
+
+    layout.minimap.width = rightPanelWidth - gutter;
+    layout.minimap.x = view.x - layout.minimap.width - gutter;
+    layout.minimap.y = gutter;
+    layout.minimap.height = layout.minimap.width;
+
+    if (layout.field.width > canvasWidth)
+        offsets.x = (canvasWidth - layout.field.width) / 2;
+    if (layout.field.width > canvasHeight)
+        offsets.y = (canvasHeight - layout.field.width) / 2;
 }
 
 onResize();
 
 window.addEventListener("resize", (e) => {
     onResize();
+    clampOffset();
     render();
 });
 
 function updateMouseOver() {
-    mouseOverSquare.x = Math.floor((offsets.x + mouse.x) / squreSize);
-    mouseOverSquare.y = Math.floor((offsets.y + mouse.y) / squreSize);
+    mouseOverSquare.x = Math.floor(
+        (offsets.x + mouse.x - layout.field.x) / squareSize
+    );
+    mouseOverSquare.y = Math.floor(
+        (offsets.y + mouse.y - layout.field.y) / squareSize
+    );
 }
 document.addEventListener("mousemove", (e) => {
     mouse.x = e.clientX;
@@ -90,24 +114,14 @@ document.addEventListener("contextmenu", (e) => {
     }
 });
 
-const showAllNumbers = false;
 const showMines = false;
 
 document.addEventListener(
     "wheel",
     (e) => {
-        if (view.x < canvasWidth)
-            offsets.x = clamp(
-                offsets.x + e.deltaX,
-                -extraPadding,
-                canvasWidth - view.x + extraPadding
-            );
-        if (view.y < canvasHeight)
-            offsets.y = clamp(
-                offsets.y + e.deltaY,
-                -extraPadding,
-                canvasHeight - view.y + extraPadding
-            );
+        offsets.x += e.deltaX;
+        offsets.y += e.deltaY;
+        clampOffset();
 
         updateMouseOver();
         render();
@@ -116,12 +130,31 @@ document.addEventListener(
     { passive: false }
 );
 
+function clampOffset() {
+    if (layout.field.width < canvasWidth)
+        offsets.x = clamp(offsets.x, 0, canvasWidth - layout.field.width);
+    else offsets.x = 0;
+
+    if (layout.field.height < canvasHeight)
+        offsets.y = clamp(offsets.y, 0, canvasHeight - layout.field.height);
+    else offsets.y = 0;
+}
+
+type Rect = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+};
 function render() {
+    ctx.fillStyle = "#31293E";
+    ctx.fillRect(0, 0, view.x, view.y);
+
     ctx.save();
 
-    ctx.clearRect(0, 0, view.x, view.y);
+    clipRect(layout.field);
 
-    ctx.translate(-offsets.x, -offsets.y);
+    ctx.translate(-offsets.x + layout.field.x, -offsets.y + layout.field.x);
     for (let x = 0; x < fieldSize; x++)
         for (let y = 0; y < fieldSize; y++) {
             const isCellOpen = isOpen({ x, y });
@@ -144,39 +177,91 @@ function render() {
                 else ctx.fillStyle = "#171928";
             }
 
-            ctx.fillRect(x * squreSize, y * squreSize, squreSize, squreSize);
+            ctx.fillRect(
+                x * squareSize,
+                y * squareSize,
+                squareSize,
+                squareSize
+            );
 
-            if ((isCellOpen || showAllNumbers) && !cellHasMine) {
-                ctx.fillStyle = "red";
+            if (isCellOpen && !cellHasMine) {
                 ctx.textBaseline = "middle";
                 ctx.textAlign = "center";
-                ctx.font = `600 ${squreSize * 0.5}px ${colors.font}`;
+                ctx.font = `600 ${squareSize * 0.5}px ${colors.font}`;
                 const numberOfMines = getNumberOfMines({ x, y });
+                const flagCount = getFlagCount(x, y);
+
+                if (numberOfMines == flagCount)
+                    ctx.fillStyle = "rgb(120,120, 120)";
+                else if (numberOfMines < flagCount) ctx.fillStyle = "#EC1C24";
+                else ctx.fillStyle = "rgb(40, 200, 40)";
                 if (numberOfMines > 0)
                     ctx.fillText(
                         numberOfMines + "",
-                        x * squreSize + squreSize / 2,
-                        y * squreSize + squreSize / 2
+                        x * squareSize + squareSize / 2,
+                        y * squareSize + squareSize / 2
                     );
             }
 
             if (hasFlag({ x, y })) {
                 ctx.save();
                 ctx.translate(
-                    iconPadding + x * squreSize,
-                    iconPadding + y * squreSize
+                    iconPadding + x * squareSize,
+                    iconPadding + y * squareSize
                 );
                 ctx.scale(
-                    (squreSize - iconPadding * 2) / width,
-                    (squreSize - iconPadding * 2) / height
+                    (squareSize - iconPadding * 2) / width,
+                    (squareSize - iconPadding * 2) / height
                 );
-                ctx.fillStyle = "#EC1C24";
+                ctx.fillStyle = "rgb(40, 200, 40)";
                 ctx.fill(path);
                 ctx.restore();
             }
         }
 
     ctx.restore();
+
+    ctx.fillStyle = "black";
+    const minimapSize = layout.minimap.width;
+    ctx.fillRect(layout.minimap.x, layout.minimap.y, minimapSize, minimapSize);
+    const minimapScaleX = minimapSize / canvasWidth;
+    const minimapScaleY = minimapSize / canvasHeight;
+    const minimapSquareSize = minimapScaleX * squareSize;
+
+    for (let x = 0; x < fieldSize; x++)
+        for (let y = 0; y < fieldSize; y++) {
+            if (isOpen({ x, y })) {
+                const flagCount = getFlagCount(x, y);
+                const numberOfMines = getNumberOfMines({ x, y });
+                if (numberOfMines < flagCount)
+                    ctx.fillStyle = "rgb(255, 20, 20)";
+                else ctx.fillStyle = "rgb(40, 40, 40)";
+                ctx.fillRect(
+                    Math.ceil(layout.minimap.x + x * minimapSquareSize),
+                    Math.ceil(layout.minimap.y + y * minimapSquareSize),
+                    Math.ceil(minimapSquareSize),
+                    Math.ceil(minimapSquareSize)
+                );
+            } else if (hasFlag({ x, y })) {
+                ctx.fillStyle = "rgb(40, 200, 40)";
+                ctx.fillRect(
+                    Math.ceil(layout.minimap.x + x * minimapSquareSize),
+                    Math.ceil(layout.minimap.y + y * minimapSquareSize),
+                    Math.ceil(minimapSquareSize),
+                    Math.ceil(minimapSquareSize)
+                );
+            }
+        }
+
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "rgb(100, 0, 0)";
+    ctx.fillRect(
+        layout.minimap.x + offsets.x * minimapScaleX,
+        layout.minimap.y + offsets.y * minimapScaleY,
+        layout.field.width * minimapScaleX + 1,
+        layout.field.height * minimapScaleY + 1
+    );
+    ctx.globalAlpha = 1;
 }
 
 const width = 169;
@@ -190,4 +275,10 @@ function clamp(v: number, min: number, max: number) {
     return v;
 }
 
+function clipRect(rect: Rect) {
+    ctx.beginPath();
+
+    ctx.rect(rect.x, rect.y, rect.width, rect.height);
+    ctx.clip();
+}
 render();

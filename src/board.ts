@@ -1,15 +1,20 @@
-export const fieldSize = 30;
-export const numberOfMines = 200;
+export const fieldSize = 100;
+export const numberOfMines = 2000;
 
-let field = new Uint8Array(fieldSize * fieldSize);
+let field = new Uint16Array(fieldSize * fieldSize);
 
 export type V2 = { x: number; y: number };
 export function hasFlag(pos: V2) {
     return !!(field[pos.y * fieldSize + pos.x] & 0b10);
 }
 export function toggleFlag(pos: V2) {
-    if (hasFlag(pos)) field[pos.y * fieldSize + pos.x] &= 0b11111101;
-    else field[pos.y * fieldSize + pos.x] |= 0b10;
+    if (hasFlag(pos)) {
+        field[pos.y * fieldSize + pos.x] &= 0b1111_1111_1111_1101;
+        decreaseFlagCountAt(pos);
+    } else {
+        field[pos.y * fieldSize + pos.x] |= 0b10;
+        increaseFlagCountAt(pos);
+    }
 }
 
 export function hasMine(pos: V2) {
@@ -26,6 +31,46 @@ export function setIsOpen(pos: V2) {
 }
 export function setMine(pos: V2) {
     field[pos.y * fieldSize + pos.x] |= 0b1;
+}
+
+function decreaseFlagCountAt(pos: V2) {
+    const { x, y } = pos;
+    incrementFlatCountBy(x - 1, y - 1, -1);
+    incrementFlatCountBy(x - 1, y, -1);
+    incrementFlatCountBy(x, y - 1, -1);
+    incrementFlatCountBy(x + 1, y + 1, -1);
+    incrementFlatCountBy(x + 1, y, -1);
+    incrementFlatCountBy(x, y + 1, -1);
+    incrementFlatCountBy(x - 1, y + 1, -1);
+    incrementFlatCountBy(x + 1, y - 1, -1);
+}
+
+function increaseFlagCountAt(pos: V2) {
+    const { x, y } = pos;
+
+    incrementFlatCountBy(x - 1, y - 1, 1);
+    incrementFlatCountBy(x - 1, y, 1);
+    incrementFlatCountBy(x, y - 1, 1);
+    incrementFlatCountBy(x + 1, y + 1, 1);
+    incrementFlatCountBy(x + 1, y, 1);
+    incrementFlatCountBy(x, y + 1, 1);
+    incrementFlatCountBy(x - 1, y + 1, 1);
+    incrementFlatCountBy(x + 1, y - 1, 1);
+}
+
+function incrementFlatCountBy(x: number, y: number, delta: number) {
+    if (x < 0 || x >= fieldSize || y < 0 || y >= fieldSize) return;
+
+    let flagsCount = getFlagCount(x, y);
+
+    flagsCount += delta;
+
+    field[y * fieldSize + x] &= 0b1111_1110_0011_1111;
+    field[y * fieldSize + x] |= flagsCount << 6;
+}
+
+export function getFlagCount(x: number, y: number) {
+    return (field[y * fieldSize + x] & 0b0000_0001_1100_0000) >> 6;
 }
 
 export function initField() {
@@ -46,7 +91,7 @@ export function initField() {
             hasMine({ x: pos.x, y: pos.y + 1 }) +
             hasMine({ x: pos.x - 1, y: pos.y + 1 }) +
             hasMine({ x: pos.x + 1, y: pos.y - 1 });
-        field[pos.y * fieldSize + pos.x] |= numberOfMines << 5;
+        setNumberOfMines(pos.x, pos.y, numberOfMines);
     }
 }
 
@@ -97,5 +142,9 @@ export function openCell(pos: V2) {
 }
 
 export function getNumberOfMines(pos: V2) {
-    return (field[pos.y * fieldSize + pos.x] & 0b11100000) >> 5;
+    return (field[pos.y * fieldSize + pos.x] & 0b00111000) >> 3;
+}
+
+function setNumberOfMines(x: number, y: number, numberOfMines: number) {
+    field[y * fieldSize + x] |= numberOfMines << 3;
 }
